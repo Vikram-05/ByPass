@@ -26,7 +26,9 @@ export const fetchCollegeEvents = async (
 };
 
 export const scanActivity = async (payload) => {
-  const { data } = await api.post("/scan", payload);
+  const { data } = await api.post("/scan", payload, {
+    validateStatus: (s) => s < 500,
+  });
   return data;
 };
 

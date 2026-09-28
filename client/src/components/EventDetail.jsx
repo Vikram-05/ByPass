@@ -252,7 +252,7 @@ export default function EventDetail({
               className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-rose-600 text-white font-medium text-sm hover:bg-rose-700 transition shadow-sm"
             >
               <LogOut className="w-4 h-4" />
-              Check Out
+              Schedule Check Out
             </button>
           </>
         )}

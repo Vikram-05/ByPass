@@ -6,8 +6,11 @@ import EventDetail from "./components/EventDetail";
 import ActionModal from "./components/ActionModal";
 import JourneyView from "./components/JourneyView";
 import SourceTabs from "./components/SourceTabs";
+import ScheduledPanel from "./components/ScheduledPanel";
 import Toast from "./components/Toast";
 import Loader from "./components/Loader";
+import useScheduler from "./hooks/useScheduler";
+import { addJob, newJobId } from "./utils/schedule";
 import {
   fetchMyEvents,
   fetchCollegeEvents,
@@ -51,6 +54,31 @@ export default function App() {
   const [joining, setJoining] = useState(false);
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState({ open: false, mode: "in" });
+
+  /* ------------------------------------------------------------------ */
+  /* Background scheduler for auto check-out                             */
+  /* ------------------------------------------------------------------ */
+  useScheduler({
+    onFired: (job, res) => {
+      const ok = String(res?.response) === "true";
+      setToast({
+        type: ok ? "success" : "error",
+        title: ok ? "Auto check-out complete" : "Auto check-out failed",
+        message:
+          res?.resultStatus ||
+          (ok
+            ? `Checked out from ${job.rideName}.`
+            : "Please try again manually."),
+      });
+    },
+    onError: (job, err) => {
+      setToast({
+        type: "error",
+        title: "Auto check-out error",
+        message: err?.message || "Network error.",
+      });
+    },
+  });
 
   /* ------------------------------------------------------------------ */
   /* Persist rider id                                                    */
@@ -263,10 +291,11 @@ export default function App() {
   };
 
   /* ------------------------------------------------------------------ */
-  /* Check-in / Check-out                                                */
+  /* Check-in / Check-out actions                                        */
   /* ------------------------------------------------------------------ */
   const handleAction = (mode) => setModal({ open: true, mode });
 
+  // Immediate check-in (mode "in") — time is "now"
   const handleSubmitAction = async ({
     mode,
     eventID,
@@ -311,6 +340,31 @@ export default function App() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // Scheduled check-out — persist a job, no network yet
+  const handleSchedule = (payload) => {
+    const job = {
+      id: newJobId(),
+      ...payload,
+      status: "pending",
+    };
+    addJob(job);
+
+    setToast({
+      type: "info",
+      title: "Auto check-out scheduled",
+      message: `We'll check you out at ${new Date(
+        job.scheduledAt
+      ).toLocaleString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        day: "2-digit",
+        month: "short",
+      })}.`,
+    });
+
+    setModal({ open: false, mode: "in" });
   };
 
   /* ------------------------------------------------------------------ */
@@ -402,6 +456,9 @@ export default function App() {
         </div>
       )}
 
+      {/* Scheduled auto check-outs banner */}
+      {riderId && <ScheduledPanel />}
+
       <main className="flex-1">
         {!riderId ? (
           <MemberEntry onSubmit={handleMemberSubmit} loading={loading} />
@@ -475,6 +532,7 @@ export default function App() {
         riderId={riderId}
         onClose={() => setModal({ open: false, mode: "in" })}
         onSubmit={handleSubmitAction}
+        onSchedule={handleSchedule}
         submitting={submitting}
       />
 

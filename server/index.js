@@ -317,41 +317,95 @@ app.post("/api/scan", async (req, res) => {
     latitude,
     longitude,
     time,
-  } = req.body;
+  } = req.body || {};
 
   if (!mode || !eventID || !riderID || !qrCode) {
-    return res
-      .status(400)
-      .json({ response: "false", resultStatus: "Missing required fields." });
+    return res.status(400).json({
+      response: "false",
+      resultStatus: "Missing required fields.",
+    });
   }
 
-  const eventNumeric = eventID.replace(/[^0-9]/g, "");
+  // ---- Build departmentID exactly like the app ----
+  // from logs: CHEKIN5846YOE584 / CHEKOUT5846YOE584
+  // The 5846 and 584 come from the event ID suffix, so we slice the
+  // numeric tail of the challengeID.
+  const numeric = String(eventID).replace(/[^0-9]/g, "");
+  const first4 = numeric.slice(-8, -4) || "0000"; // 5846
+  const last3 = numeric.slice(-3);                // 584
   const departmentID =
     mode === "in"
-      ? `CHEKIN${eventNumeric.slice(0, 4)}YOE${eventNumeric.slice(4, 8)}`
-      : `CHEKOUT${eventNumeric.slice(0, 4)}YOE${eventNumeric.slice(4, 8)}`;
+      ? `CHEKIN${first4}YOE${last3}`
+      : `CHEKOUT${first4}YOE${last3}`;
+
+  // ---- Normalize time to "YYYY-Mon-DD HH:MM" ----
+  const months = [
+    "Jan","Feb","Mar","Apr","May","Jun",
+    "Jul","Aug","Sep","Oct","Nov","Dec",
+  ];
+  const pad = (n) => String(n).padStart(2, "0");
+  let timeStr = time;
+  if (time instanceof Date || typeof time === "string") {
+    const d = time instanceof Date ? time : new Date(time);
+    if (!isNaN(d.getTime())) {
+      timeStr = `${d.getFullYear()}-${months[d.getMonth()]}-${pad(
+        d.getDate()
+      )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+  if (!timeStr) {
+    const d = new Date();
+    timeStr = `${d.getFullYear()}-${months[d.getMonth()]}-${pad(
+      d.getDate()
+    )} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // ---- Build x-www-form-urlencoded body ----
+  const body = new URLSearchParams();
+  body.append("whichapp", "campuslife");
+  body.append("eventID", String(eventID));
+  body.append("riderID", String(riderID));
+  body.append("address", String(address || ""));
+  body.append("qrCode", String(qrCode));
+  body.append("departmentID", departmentID);
+  body.append("latitude", String(latitude ?? ""));
+  body.append("time", timeStr);
+  body.append("longitude", String(longitude ?? ""));
+
+  // Debug (optional — remove after verifying)
+  console.log("[scan] POST", CYKUL_SCAN_URL);
+  console.log("[scan] body:", body.toString());
 
   try {
-    const { data } = await axios.get(CYKUL_SCAN_URL, {
-      params: {
-        whichapp: "campuslife",
-        eventID,
-        riderID,
-        address,
-        qrCode,
-        departmentID,
-        latitude,
-        time,
-        longitude,
+    const { data } = await axios.post(CYKUL_SCAN_URL, body.toString(), {
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded; charset=UTF-8",
+        "User-Agent":
+          "Dalvik/2.1.0 (Linux; U; Android 16; RMX5030 Build/BP2A.250605.015)",
+        Accept: "application/json, text/plain, */*",
       },
       timeout: 15000,
+      validateStatus: () => true,
     });
-    res.json(data);
+
+    // Some responses come back as stringified JSON — normalize.
+    let payload = data;
+    if (typeof data === "string") {
+      try {
+        payload = JSON.parse(data);
+      } catch {
+        payload = { response: "false", resultStatus: data };
+      }
+    }
+
+    res.json(payload);
   } catch (err) {
     console.error("[scan]", err.message);
-    res
-      .status(500)
-      .json({ response: "false", resultStatus: "Server error: " + err.message });
+    res.status(500).json({
+      response: "false",
+      resultStatus: "Server error: " + err.message,
+    });
   }
 });
 
