@@ -1,4 +1,5 @@
 import axios from "axios";
+const PROD_FALLBACK = "https://bypass-backend-2715.onrender.com";
 
 const api = axios.create({
   baseURL: "/api",
