@@ -24,6 +24,15 @@ const JOIN_EVENT_URL =
 
 const JOURNEY_URL = "https://vtuapts.zdotapps.in/api/student/journey/";
 
+
+// ---- Upstream APIs -------------------------------------------------------
+// ---- Upstream API -------------------------------------------------------
+const CYKUL_TIMELINE_URL =
+  "https://cykul.in/app/lifeCykul/webservice/Vfinal/timelineActivitiesV20.php";
+const CYKUL_POST_DETAIL_URL =
+  "https://cykul.in/app/lifeCykul/webservice/Vfinal/SWG_PostDetails.php";
+const CYKUL_DELETE_POST_URL =
+  "https://cykul.in/app/lifeCykul/webservice/deleteActivity.php";
 // ---- Helpers ------------------------------------------------------------
 const asArray = (v) => (Array.isArray(v) ? v : v ? [v] : []);
 
@@ -306,6 +315,194 @@ app.get("/api/college-events/:riderId", async (req, res) => {
   }
 });
 
+/* ---------------- My Posts ---------------- */
+/* ---------------- My Posts / My Activities ---------------- */
+
+app.post("/api/my-posts", async (req, res) => {
+  const {
+    riderId,
+    page = 1,
+    activity = "All",
+    challengeID = "",
+    key = "myActivities",
+  } = req.body || {};
+
+  if (!riderId) {
+    return res
+      .status(400)
+      .json({ status: "error", message: "riderId is required" });
+  }
+
+  // ---- Build the request exactly like the Android app ----
+  const body = new URLSearchParams();
+  body.append("whichapp", "campuslife");
+  body.append("challengeID", String(challengeID || ""));
+  body.append("activity", String(activity));
+  body.append("user_id", String(riderId));
+  body.append("page", String(page));
+  body.append("rider_id", String(riderId));
+  body.append("key", String(key));
+
+  const requestEcho = body.toString();
+  console.log("[my-posts] POST", CYKUL_TIMELINE_URL);
+  console.log("[my-posts] body:", requestEcho);
+
+  try {
+    const { data } = await axios.post(CYKUL_TIMELINE_URL, requestEcho, {
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded; charset=UTF-8",
+        "User-Agent":
+          "Dalvik/2.1.0 (Linux; U; Android 16; RMX5030 Build/BP2A.250605.015)",
+        Accept: "application/json, text/plain, */*",
+      },
+      timeout: 20000,
+      validateStatus: () => true,
+    });
+
+    // Upstream usually puts the list in resultStatus
+    const rawList = Array.isArray(data?.resultStatus)
+      ? data.resultStatus
+      : Array.isArray(data?.data?.resultStatus)
+      ? data.data.resultStatus
+      : [];
+
+    // Strip the "welcome" placeholder + anything without a real activityID
+    const posts = rawList.filter(
+      (p) =>
+        p &&
+        p.category !== "welcome" &&
+        p.activityID &&
+        String(p.activityID) !== "0"
+    );
+
+    // What the upstream claimed, and what we actually kept
+    console.log(
+      `[my-posts] upstream count=${data?.count ?? "?"} kept=${posts.length}`
+    );
+
+    res.json({
+      status: "success",
+      data: {
+        posts,
+        count: posts.length,
+        isEmpty: posts.length === 0,
+        respText: data?.respText || "",
+        // 👇 debugging aids — useful until the query returns real posts
+        debug: {
+          requestBody: requestEcho,
+          upstreamCount: data?.count ?? null,
+          upstreamRaw: rawList,
+        },
+        meta: {
+          weekData: data?.weekData || [],
+          followcount: data?.followcount ?? 0,
+          rewardTrophyCount: data?.rewardTrophyCount ?? 0,
+          rewardVoucherCount: data?.rewardVoucherCount ?? 0,
+          rewardAmountCount: data?.rewardAmountCount ?? 0,
+          streamInterval: data?.streamInterval ?? 3000,
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[my-posts]", err.message);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to fetch posts",
+      detail: err.message,
+    });
+  }
+});
+
+/* ---------------- Single Post Detail ---------------- */
+app.post("/api/post-detail", async (req, res) => {
+  const { riderID, activityID, eventID } = req.body || {};
+  if (!riderID || !activityID) {
+    return res
+      .status(400)
+      .json({ status: "error", message: "riderID and activityID required" });
+  }
+
+  try {
+    const body = new URLSearchParams();
+    body.append("whichapp", "campuslife");
+    body.append("riderID", String(riderID));
+    body.append("activityID", String(activityID));
+    if (eventID) body.append("eventID", String(eventID));
+
+    const { data } = await axios.post(
+      CYKUL_POST_DETAIL_URL,
+      body.toString(),
+      {
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded; charset=UTF-8",
+          "User-Agent":
+            "Dalvik/2.1.0 (Linux; U; Android 16; RMX5030 Build/BP2A.250605.015)",
+          Accept: "application/json, text/plain, */*",
+        },
+        timeout: 15000,
+        validateStatus: () => true,
+      }
+    );
+
+    // Upstream returns the post under followresultStatus (per your sample).
+    const post = data?.followresultStatus || data?.resultStatus || data;
+    res.json({ status: "success", data: { post } });
+  } catch (err) {
+    console.error("[post-detail]", err.message);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to fetch post",
+      detail: err.message,
+    });
+  }
+});
+
+/* ---------------- Delete Post ---------------- */
+app.post("/api/delete-post", async (req, res) => {
+  const { rider_id, activityID, challengeID } = req.body || {};
+  if (!rider_id || !activityID || !challengeID) {
+    return res.status(400).json({
+      status: "error",
+      message: "rider_id, activityID, and challengeID are required",
+    });
+  }
+
+  try {
+    const body = new URLSearchParams();
+    body.append("activityMode", "mivPosts");
+    body.append("whichapp", "campuslife");
+    body.append("activityID", String(activityID));
+    body.append("challengeID", String(challengeID));
+    body.append("rider_id", String(rider_id));
+
+    const { data } = await axios.post(
+      CYKUL_DELETE_POST_URL,
+      body.toString(),
+      {
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded; charset=UTF-8",
+          "User-Agent":
+            "Dalvik/2.1.0 (Linux; U; Android 16; RMX5030 Build/BP2A.250605.015)",
+          Accept: "application/json, text/plain, */*",
+        },
+        timeout: 15000,
+        validateStatus: () => true,
+      }
+    );
+
+    res.json(data);
+  } catch (err) {
+    console.error("[delete-post]", err.message);
+    res.status(500).json({
+      resultStatus: "false",
+      reportStatus: "Failed to delete: " + err.message,
+    });
+  }
+});
+
 /** Scan (check-in / check-out) — unchanged */
 app.post("/api/scan", async (req, res) => {
   const {
@@ -414,3 +611,6 @@ app.get("/", (_, res) => res.send("ByPass API is running 🚀"));
 app.listen(PORT, () =>
   console.log(`ByPass server running on http://localhost:${PORT}`)
 );
+
+
+

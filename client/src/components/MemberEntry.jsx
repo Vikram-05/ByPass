@@ -11,10 +11,10 @@ export default function MemberEntry({ onSubmit, loading }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md animate-fade-up">
+    <div className="max-h-screen min-h-screen flex items-start justify-center px-4 py-10 ">
+      <div className="w-full max-w-md animate-fade-up ">
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-ink-900 flex items-center justify-center mb-4 shadow-lg">
+          <div className="w-14 h-14 b rounded-2xl bg-ink-900 flex items-center justify-center mb-4 shadow-lg">
             <Zap className="w-7 h-7 text-accent-400" />
           </div>
           <h1 className="text-3xl font-semibold tracking-tight">ByPass</h1>
@@ -43,7 +43,7 @@ export default function MemberEntry({ onSubmit, loading }) {
               autoComplete="off"
               value={id}
               onChange={(e) => setId(e.target.value.replace(/\s/g, ""))}
-              placeholder="e.g. 1713009"
+              placeholder="e.g. 1234567"
               className="w-full pl-9 pr-3 py-3 rounded-xl bg-ink-50 border border-ink-100 text-sm font-medium tracking-wide focus:outline-none focus:ring-2 focus:ring-accent-400 focus:bg-white transition"
             />
           </div>

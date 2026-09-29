@@ -1,23 +1,75 @@
 import { useEffect, useState } from "react";
 import { Timer, X, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { loadJobs, removeJob } from "../utils/schedule";
+import useCountdown from "../hooks/useCountdown";
 
-function timeLeft(ms) {
-  if (ms <= 0) return "due";
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${sec}s`;
-  return `${sec}s`;
+function JobRow({ job, onCancel, variant = "pending" }) {
+  const remaining = useCountdown(job.status === "pending" ? job.scheduledAt : null);
+  const styles =
+    variant === "pending"
+      ? {
+          wrap: "bg-rose-50 ring-rose-100",
+          icon: job.status === "running"
+            ? <Loader2 className="w-4 h-4 text-rose-600 animate-spin" />
+            : <Timer className="w-4 h-4 text-rose-600" />,
+          title: "text-rose-900",
+          sub: "text-rose-700",
+        }
+      : job.status === "completed"
+      ? {
+          wrap: "bg-emerald-50 ring-emerald-100",
+          icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
+          title: "text-emerald-900",
+          sub: "text-ink-600",
+        }
+      : {
+          wrap: "bg-amber-50 ring-amber-100",
+          icon: <AlertCircle className="w-4 h-4 text-amber-600" />,
+          title: "text-amber-900",
+          sub: "text-ink-600",
+        };
+
+  const title =
+    variant === "pending"
+      ? "Auto check-out scheduled"
+      : job.status === "completed"
+      ? "Auto check-out completed"
+      : "Auto check-out failed";
+
+  return (
+    <div
+      className={`flex items-center gap-3 ${styles.wrap} ring-1 rounded-xl px-4 py-2.5`}
+    >
+      {styles.icon}
+      <div className="min-w-0 flex-1">
+        <p className={`text-xs font-semibold truncate ${styles.title}`}>
+          {title}
+        </p>
+        <p className={`text-[11px] truncate ${styles.sub}`}>
+          {job.rideName}
+          {variant === "pending" && (
+            <>
+              {" · fires in "}
+              <span className="tabular-nums font-medium">{remaining}</span>
+            </>
+          )}
+          {job.error ? ` · ${job.error}` : ""}
+        </p>
+      </div>
+      <button
+        onClick={() => onCancel(job.id)}
+        className="p-1.5 rounded-lg hover:bg-white/60 transition shrink-0"
+        aria-label="Dismiss"
+      >
+        <X className="w-3.5 h-3.5 text-ink-500" />
+      </button>
+    </div>
+  );
 }
 
 export default function ScheduledPanel() {
   const [jobs, setJobs] = useState(loadJobs());
-  const [, force] = useState(0);
 
-  // re-read on schedule changes
   useEffect(() => {
     const reload = () => setJobs(loadJobs());
     window.addEventListener("bypass:jobs-changed", reload);
@@ -28,14 +80,9 @@ export default function ScheduledPanel() {
     };
   }, []);
 
-  // tick every second for countdown
-  useEffect(() => {
-    const t = setInterval(() => force((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  const now = Date.now();
-  const pending = jobs.filter((j) => j.status === "pending" || j.status === "running");
+  const pending = jobs.filter(
+    (j) => j.status === "pending" || j.status === "running"
+  );
   const recent = jobs
     .filter((j) => j.status === "completed" || j.status === "failed")
     .slice(-2);
@@ -45,79 +92,10 @@ export default function ScheduledPanel() {
   return (
     <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4 space-y-2">
       {pending.map((j) => (
-        <div
-          key={j.id}
-          className="flex items-center gap-3 bg-rose-50 ring-1 ring-rose-100 rounded-xl px-4 py-2.5"
-        >
-          {j.status === "running" ? (
-            <Loader2 className="w-4 h-4 text-rose-600 animate-spin" />
-          ) : (
-            <Timer className="w-4 h-4 text-rose-600" />
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-rose-900 truncate">
-              Auto check-out scheduled
-            </p>
-            <p className="text-[11px] text-rose-700 truncate">
-              {j.rideName} · fires in {timeLeft(j.scheduledAt - now)} ·
-              {" "}
-              {new Date(j.scheduledAt).toLocaleString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                day: "2-digit",
-                month: "short",
-              })}
-            </p>
-          </div>
-          <button
-            onClick={() => removeJob(j.id)}
-            className="p-1.5 rounded-lg hover:bg-rose-100 transition"
-            aria-label="Cancel scheduled checkout"
-          >
-            <X className="w-3.5 h-3.5 text-rose-600" />
-          </button>
-        </div>
+        <JobRow key={j.id} job={j} onCancel={removeJob} />
       ))}
-
       {recent.map((j) => (
-        <div
-          key={j.id}
-          className={`flex items-center gap-3 rounded-xl px-4 py-2.5 ring-1 ${
-            j.status === "completed"
-              ? "bg-emerald-50 ring-emerald-100"
-              : "bg-amber-50 ring-amber-100"
-          }`}
-        >
-          {j.status === "completed" ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          ) : (
-            <AlertCircle className="w-4 h-4 text-amber-600" />
-          )}
-          <div className="min-w-0 flex-1">
-            <p
-              className={`text-xs font-semibold truncate ${
-                j.status === "completed"
-                  ? "text-emerald-900"
-                  : "text-amber-900"
-              }`}
-            >
-              {j.status === "completed"
-                ? "Auto check-out completed"
-                : "Auto check-out failed"}
-            </p>
-            <p className="text-[11px] text-ink-600 truncate">
-              {j.rideName}
-              {j.error ? ` · ${j.error}` : ""}
-            </p>
-          </div>
-          <button
-            onClick={() => removeJob(j.id)}
-            className="p-1.5 rounded-lg hover:bg-white/60 transition"
-            aria-label="Dismiss"
-          >
-            <X className="w-3.5 h-3.5 text-ink-500" />
-          </button>
-        </div>
+        <JobRow key={j.id} job={j} onCancel={removeJob} variant="recent" />
       ))}
     </div>
   );

@@ -14,11 +14,35 @@ export function saveJobs(jobs) {
   window.dispatchEvent(new Event("bypass:jobs-changed"));
 }
 
-export function addJob(job) {
-  const jobs = loadJobs();
-  jobs.push(job);
-  saveJobs(jobs);
+/**
+ * Add or replace the pending job for the given (riderID, eventID).
+ * Returns the final job record. Any previous pending/running job for the
+ * same event is removed so there's only ever one.
+ */
+export function upsertJob(job) {
+  const existing = loadJobs();
+  const filtered = existing.filter(
+    (j) =>
+      !(
+        j.riderID === job.riderID &&
+        j.eventID === job.eventID &&
+        (j.status === "pending" || j.status === "running")
+      )
+  );
+  filtered.push(job);
+  saveJobs(filtered);
   return job;
+}
+
+export function findJobForEvent(riderId, eventId) {
+  return (
+    loadJobs().find(
+      (j) =>
+        j.riderID === riderId &&
+        j.eventID === eventId &&
+        (j.status === "pending" || j.status === "running")
+    ) || null
+  );
 }
 
 export function removeJob(id) {

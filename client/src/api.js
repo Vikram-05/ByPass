@@ -109,4 +109,46 @@ export const joinEvent = async ({ rider_id, eventID, check_only = false }) => {
   return data;
 };
 
+
+/** My Posts / My Activities */
+export const fetchMyPosts = async (
+  riderId,
+  { page = 1, pageSize = 20, activity = "All", challengeID = "", key = "myActivities" } = {}
+) => {
+  const { data } = await api.post(
+    "/my-posts",
+    {
+      riderId: String(riderId),
+      page,
+      pageSize,
+      activity,
+      challengeID,
+      key,
+    },
+    { validateStatus: (s) => s < 500 }
+  );
+  return data;
+};
+
+/** Single Post Detail */
+export const fetchPostDetail = async ({ riderID, activityID, eventID }) => {
+  const { data } = await api.post(
+    "/post-detail",
+    { riderID: String(riderID), activityID, eventID },
+    { validateStatus: (s) => s < 500 }
+  );
+  return data;
+};
+
+/** Delete Post */
+export const deletePost = async ({ rider_id, activityID, challengeID }) => {
+  const { data } = await api.post(
+    "/delete-post",
+    { rider_id: String(rider_id), activityID, challengeID },
+    { validateStatus: (s) => s < 500 }
+  );
+  return data;
+};
+
+
 export default api;

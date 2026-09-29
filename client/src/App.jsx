@@ -8,16 +8,33 @@ import JourneyView from "./components/JourneyView";
 import SourceTabs from "./components/SourceTabs";
 import ScheduledPanel from "./components/ScheduledPanel";
 import Toast from "./components/Toast";
+import CountdownToast from "./components/CountdownToast";
 import Loader from "./components/Loader";
+import Settings from "./components/Settings";
+
 import useScheduler from "./hooks/useScheduler";
-import { addJob, newJobId } from "./utils/schedule";
+
 import {
   fetchMyEvents,
   fetchCollegeEvents,
   fetchJourney,
   scanActivity,
   joinEvent,
+  warmup,
 } from "./api";
+
+import {
+  upsertJob,
+  newJobId,
+  findJobForEvent,
+} from "./utils/schedule";
+
+import {
+  isCheckedIn,
+  setCheckin,
+  clearCheckin,
+} from "./utils/checkinState";
+
 import { toApiTimeRaw } from "./utils/format";
 
 export default function App() {
@@ -55,12 +72,21 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState({ open: false, mode: "in" });
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /* ------------------------------------------------------------------ */
+  /* Warm up the backend on mount (Render cold-start)                    */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    warmup();
+  }, []);
+
   /* ------------------------------------------------------------------ */
   /* Background scheduler for auto check-out                             */
   /* ------------------------------------------------------------------ */
   useScheduler({
     onFired: (job, res) => {
       const ok = String(res?.response) === "true";
+      if (ok) clearCheckin(job.riderID, job.eventID);
       setToast({
         type: ok ? "success" : "error",
         title: ok ? "Auto check-out complete" : "Auto check-out failed",
@@ -306,6 +332,44 @@ export default function App() {
     longitude,
     time,
   }) => {
+    /* ---------- Guard 1: already checked in ---------- */
+    if (mode === "in" && isCheckedIn(riderID, eventID)) {
+      setToast({
+        type: "info",
+        title: "Already checked in",
+        message: "You have already checked in to this event.",
+      });
+      setModal({ open: false, mode: "in" });
+      return;
+    }
+
+    /* ---------- Guard 2: not checked in but trying to check out ---------- */
+    if (mode === "out" && !isCheckedIn(riderID, eventID)) {
+      setToast({
+        type: "info",
+        title: "Not checked in",
+        message: "Please check in before checking out.",
+      });
+      setModal({ open: false, mode: "in" });
+      return;
+    }
+
+    /* ---------- Guard 3: a scheduled checkout already exists ---------- */
+    if (mode === "out") {
+      const existing = findJobForEvent(riderID, eventID);
+      if (existing) {
+        setToast({
+          type: "info",
+          title: "Checkout already scheduled",
+          message:
+            "You already have an auto check-out scheduled for this event. " +
+            "Schedule again to replace it.",
+        });
+        setModal({ open: false, mode: "in" });
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const res = await scanActivity({
@@ -319,6 +383,17 @@ export default function App() {
         time: toApiTimeRaw(time),
       });
       const ok = String(res?.response) === "true";
+
+      if (ok && mode === "in") {
+        setCheckin(riderID, eventID, {
+          checkinAt: Date.now(),
+          rideName: selected?.rideName,
+        });
+      }
+      if (ok && mode === "out") {
+        clearCheckin(riderID, eventID);
+      }
+
       setToast({
         type: ok ? "success" : "error",
         title: ok
@@ -342,26 +417,30 @@ export default function App() {
     }
   };
 
-  // Scheduled check-out — persist a job, no network yet
+  // Scheduled check-out — persist a job (single per event), no network yet
   const handleSchedule = (payload) => {
+    const existing = findJobForEvent(payload.riderID, payload.eventID);
+
     const job = {
-      id: newJobId(),
+      id: existing?.id || newJobId(),
       ...payload,
       status: "pending",
+      createdAt: Date.now(),
     };
-    addJob(job);
+
+    // Replaces any pending/running job for this event.
+    upsertJob(job);
 
     setToast({
-      type: "info",
-      title: "Auto check-out scheduled",
-      message: `We'll check you out at ${new Date(
-        job.scheduledAt
-      ).toLocaleString("en-IN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        day: "2-digit",
-        month: "short",
-      })}.`,
+      type: "countdown",
+      title: existing
+        ? "Auto check-out rescheduled"
+        : "Auto check-out scheduled",
+      message: existing
+        ? `Replaced the previous schedule for ${job.rideName}.`
+        : `We'll check you out from ${job.rideName}.`,
+      scheduledAt: job.scheduledAt,
+      autoCloseAfter: 8000,
     });
 
     setModal({ open: false, mode: "in" });
@@ -412,8 +491,8 @@ export default function App() {
           (already
             ? "You're already a member of this event."
             : ok
-            ? "You've been added to the event."
-            : "Please try again."),
+              ? "You've been added to the event."
+              : "Please try again."),
       });
 
       // 3) Refresh the All Events list so join state stays fresh
@@ -442,12 +521,24 @@ export default function App() {
   /* ------------------------------------------------------------------ */
   const eventsToShow = source === "college" ? collegeEvents : myEvents;
 
+  const selectedCheckedIn = selected
+    ? isCheckedIn(riderId, selected.challengeID)
+    : false;
+
+  const selectedHasSchedule = selected
+    ? !!findJobForEvent(riderId, selected.challengeID)
+    : false;
+
   /* ------------------------------------------------------------------ */
   /* Render                                                              */
   /* ------------------------------------------------------------------ */
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar riderId={riderId} onLogout={handleLogout} />
+      <Navbar
+        riderId={riderId}
+        onLogout={handleLogout}
+        onSettings={() => setSettingsOpen(true)}
+      />
 
       {/* Shared source tabs (All Events / My Events / Journey) */}
       {riderId && (
@@ -471,6 +562,8 @@ export default function App() {
             onAction={handleAction}
             onJoin={handleJoin}
             joining={joining}
+            checkedIn={selectedCheckedIn}
+            hasScheduledCheckout={selectedHasSchedule}
             collegeMeta={source === "college" ? collegeMeta : null}
           />
         ) : source === "journey" ? (
@@ -536,7 +629,18 @@ export default function App() {
         submitting={submitting}
       />
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
+      {/* Toast — either the regular one or the countdown variant */}
+      {toast?.type === "countdown" ? (
+        <CountdownToast toast={toast} onClose={() => setToast(null)} />
+      ) : (
+        <Toast toast={toast} onClose={() => setToast(null)} />
+      )}
+      <Settings
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        riderId={riderId}
+        onToast={setToast}
+      />
     </div>
   );
 }
