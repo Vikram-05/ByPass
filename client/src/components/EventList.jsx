@@ -52,7 +52,7 @@ export default function EventList({
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 animate-fade-up">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 animate-fade-up ">
       {/* Header row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
         <div>

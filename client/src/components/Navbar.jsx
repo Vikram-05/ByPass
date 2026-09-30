@@ -2,7 +2,7 @@ import { LogOut, User, Zap, Settings as SettingsIcon } from "lucide-react";
 
 export default function Navbar({ riderId, onLogout, onSettings }) {
   return (
-    <header className="sticky top-0 z-30 bg-white/80 backdrop-blur border-b border-ink-100">
+    <header className="sticky top-0 z-30 bg-white/30 backdrop-blur border-b border-ink-100">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
          

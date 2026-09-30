@@ -23,25 +23,27 @@ const TABS = [
 
 export default function SourceTabs({ value, onChange }) {
   return (
-    <div className="inline-flex items-center gap-1 p-1 bg-white rounded-2xl ring-1 ring-ink-100 shadow-sm overflow-x-auto max-w-full">
-      {TABS.map(({ key, label, hint, icon: Icon }) => {
-        const active = value === key;
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            title={hint}
-            className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap ${
-              active
-                ? "bg-ink-900 text-white shadow-sm"
-                : "text-ink-600 hover:bg-ink-50"
-            }`}
-          >
-            <Icon className="w-3.5 h-3.5" />
-            {label}
-          </button>
-        );
-      })}
+    <div className="inline-flex items-center justify-center   min-w-full  ">
+      <div className="flex items-center bg-white rounded-2xl ring-1 gap-1 p-1 ring-ink-100 shadow-sm overflow-x-auto">
+        {TABS.map(({ key, label, hint, icon: Icon }) => {
+          const active = value === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onChange(key)}
+              title={hint}
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap ${active
+                  ? "bg-ink-900 text-white shadow-sm"
+                  : "text-ink-600 hover:bg-ink-50"
+                }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
     </div>
   );
 }
