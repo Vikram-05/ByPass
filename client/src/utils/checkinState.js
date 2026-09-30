@@ -1,35 +1,25 @@
-const KEY = "bypass_checkin_state";
+const KEY_PREFIX = "bypass_checkin_state";
 
-/* Shape stored:
-   {
-     "1713009": {
-       "CLCYOE6235260529062357251": {
-         "activityID": "4468198",
-         "checkinAt": 1738000000000,
-         "eventID": "CLCYOE6235260529062357251",
-         "rideName": "..."
-       },
-       ...
-     }
-   }
-*/
+function keyFor(riderId) {
+  return `${KEY_PREFIX}:${riderId || "anon"}`;
+}
 
-function readAll() {
+function readAll(riderId) {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || "{}");
+    return JSON.parse(localStorage.getItem(keyFor(riderId)) || "{}");
   } catch {
     return {};
   }
 }
 
-function writeAll(state) {
-  localStorage.setItem(KEY, JSON.stringify(state));
+function writeAll(riderId, state) {
+  localStorage.setItem(keyFor(riderId), JSON.stringify(state));
   window.dispatchEvent(new Event("bypass:checkin-changed"));
 }
 
 export function getCheckin(riderId, eventID) {
-  const all = readAll();
-  return all?.[riderId]?.[eventID] || null;
+  const all = readAll(riderId);
+  return all?.[eventID] || null;
 }
 
 export function isCheckedIn(riderId, eventID) {
@@ -37,27 +27,18 @@ export function isCheckedIn(riderId, eventID) {
 }
 
 export function setCheckin(riderId, eventID, info) {
-  const all = readAll();
-  const forRider = { ...(all[riderId] || {}) };
-  forRider[eventID] = { ...info, eventID };
-  all[riderId] = forRider;
-  writeAll(all);
-  return forRider[eventID];
+  const all = readAll(riderId);
+  all[eventID] = { ...info, eventID };
+  writeAll(riderId, all);
+  return all[eventID];
 }
 
 export function clearCheckin(riderId, eventID) {
-  const all = readAll();
-  const forRider = { ...(all[riderId] || {}) };
-  delete forRider[eventID];
-  all[riderId] = forRider;
-  writeAll(all);
+  const all = readAll(riderId);
+  delete all[eventID];
+  writeAll(riderId, all);
 }
 
 export function listCheckins(riderId) {
-  const all = readAll();
-  return Object.values(all?.[riderId] || {});
-}
-
-export function loadCheckinState() {
-  return readAll();
+  return Object.values(readAll(riderId) || {});
 }

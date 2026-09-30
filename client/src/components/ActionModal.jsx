@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   X,
   LogIn,
@@ -8,12 +8,13 @@ import {
   Clock,
   Zap,
   Timer,
+  CalendarClock,
 } from "lucide-react";
 import MapPicker from "./MapPicker";
 import { toLocalInputValue } from "../utils/format";
 
-/* Preset durations for checkout */
 const PRESETS = [
+  { label: "Now", ms: 0 },
   { label: "+30m", ms: 30 * 60 * 1000 },
   { label: "+1h", ms: 60 * 60 * 1000 },
   { label: "+2h", ms: 2 * 60 * 60 * 1000 },
@@ -23,23 +24,21 @@ const PRESETS = [
 
 export default function ActionModal({
   open,
-  mode, // "in" | "out"
+  mode,        // "in" | "out"
+  scheduled,   // true = scheduled, false = immediate
   event,
   riderId,
   onClose,
-  onSubmit,       // for immediate check-in
-  onSchedule,     // for scheduled checkout
+  onSubmit,
+  onSchedule,
   submitting,
 }) {
   const [location, setLocation] = useState(null);
-  const [qrCode, setQrCode] = useState("12345");
+  const [qrCode, setQrCode] = useState(mode === "in" ? "12345" : "139985");
   const [error, setError] = useState("");
-
-  // For checkout scheduling
-  const [scheduleAt, setScheduleAt] = useState(() => {
-    // default: now + 1 hour
-    return new Date(Date.now() + 60 * 60 * 1000);
-  });
+  const [scheduleAt, setScheduleAt] = useState(
+    new Date(Date.now() + 60 * 60 * 1000)
+  );
 
   useEffect(() => {
     if (open) {
@@ -57,20 +56,19 @@ export default function ActionModal({
   }, [open, onClose]);
 
   const isIn = mode === "in";
-  const title = isIn ? "Check In" : "Schedule Check Out";
+  const isScheduled = !!scheduled;
 
-  const scheduleMinValue = useMemo(
-    () => toLocalInputValue(new Date(Date.now() + 60 * 1000)),
-    // recompute when modal opens
-    // eslint-disable-next-line
-    [open]
-  );
-
-  const applyPreset = (ms) => {
-    setScheduleAt(new Date(Date.now() + ms));
-  };
+  const title = isScheduled
+    ? isIn
+      ? "Schedule Check In"
+      : "Schedule Check Out"
+    : isIn
+    ? "Check In"
+    : "Check Out";
 
   if (!open) return null;
+
+  const applyPreset = (ms) => setScheduleAt(new Date(Date.now() + ms));
 
   const handleSubmit = () => {
     setError("");
@@ -83,10 +81,22 @@ export default function ActionModal({
       return;
     }
 
-    if (isIn) {
-      // Immediate check-in at "now"
+    if (isScheduled) {
+      // No time restriction at all — past times fire immediately.
+      onSchedule({
+        mode,
+        riderID: riderId,
+        eventID: event.challengeID,
+        rideName: event.rideName,
+        address: location.address,
+        qrCode: qrCode.trim(),
+        latitude: location.latitude,
+        longitude: location.longitude,
+        scheduledAt: scheduleAt.getTime(),
+      });
+    } else {
       onSubmit({
-        mode: "in",
+        mode,
         eventID: event.challengeID,
         riderID: riderId,
         address: location.address,
@@ -95,24 +105,10 @@ export default function ActionModal({
         longitude: location.longitude,
         time: new Date(),
       });
-    } else {
-      // Scheduled checkout
-      if (scheduleAt.getTime() <= Date.now() + 30 * 1000) {
-        setError("Pick a time at least 1 minute in the future.");
-        return;
-      }
-      onSchedule({
-        eventID: event.challengeID,
-        rideName: event.rideName,
-        riderID: riderId,
-        address: location.address,
-        qrCode: qrCode.trim(),
-        latitude: location.latitude,
-        longitude: location.longitude,
-        scheduledAt: scheduleAt.getTime(),
-      });
     }
   };
+
+  const isPast = scheduleAt.getTime() <= Date.now();
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -122,7 +118,6 @@ export default function ActionModal({
       />
 
       <div className="relative w-full sm:max-w-2xl bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl max-h-[92vh] overflow-y-auto animate-fade-up">
-        {/* Header */}
         <div className="sticky top-0 z-10 bg-white border-b border-ink-100 px-5 sm:px-6 py-4 flex items-start justify-between rounded-t-3xl">
           <div className="flex items-center gap-3">
             <div
@@ -132,7 +127,13 @@ export default function ActionModal({
                   : "bg-rose-50 text-rose-600"
               }`}
             >
-              {isIn ? <LogIn className="w-5 h-5" /> : <LogOut className="w-5 h-5" />}
+              {isScheduled ? (
+                <CalendarClock className="w-5 h-5" />
+              ) : isIn ? (
+                <LogIn className="w-5 h-5" />
+              ) : (
+                <LogOut className="w-5 h-5" />
+              )}
             </div>
             <div>
               <h3 className="font-semibold text-ink-900 leading-tight">
@@ -151,39 +152,17 @@ export default function ActionModal({
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 sm:p-6 space-y-6">
           <MapPicker value={location} onChange={setLocation} />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* Time: only shown on checkout */}
-            {isIn ? (
-              <div>
-                <label className="text-xs font-medium text-ink-600 flex items-center gap-1.5 mb-2">
-                  <Clock className="w-3.5 h-3.5" />
-                  Check-in time
-                </label>
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-ink-50 border border-ink-100 text-sm">
-                  <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="font-medium text-ink-800">
-                    Right now
-                  </span>
-                  <span className="text-ink-400 text-xs ml-auto">
-                    {new Date().toLocaleTimeString("en-IN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-              </div>
-            ) : (
+            {isScheduled ? (
               <div>
                 <label className="text-xs font-medium text-ink-600 flex items-center gap-1.5 mb-2">
                   <Timer className="w-3.5 h-3.5" />
-                  Auto checkout at
+                  Auto {isIn ? "check-in" : "check-out"} at
                 </label>
 
-                {/* Presets */}
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {PRESETS.map(({ label, ms }) => (
                     <button
@@ -197,9 +176,9 @@ export default function ActionModal({
                   ))}
                 </div>
 
+                {/* No min attribute — any time allowed */}
                 <input
                   type="datetime-local"
-                  min={scheduleMinValue}
                   value={toLocalInputValue(scheduleAt)}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -208,13 +187,37 @@ export default function ActionModal({
                   className="w-full px-3 py-2.5 rounded-xl bg-ink-50 border border-ink-100 text-sm focus:outline-none focus:ring-2 focus:ring-accent-400 focus:bg-white transition"
                 />
                 <p className="text-[10px] text-ink-400 mt-1">
-                  ByPass will automatically check you out at this time. You can
-                  cancel anytime from the Dashboard.
+                  {isPast
+                    ? "Time is in the past — it will fire immediately."
+                    : `ByPass will automatically ${
+                        isIn ? "check you in" : "check you out"
+                      } at this time.`}{" "}
+                  You can cancel anytime.
                 </p>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-medium text-ink-600 flex items-center gap-1.5 mb-2">
+                  <Clock className="w-3.5 h-3.5" />
+                  {isIn ? "Check-in time" : "Check-out time"}
+                </label>
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-ink-50 border border-ink-100 text-sm">
+                  <Zap
+                    className={`w-3.5 h-3.5 ${
+                      isIn ? "text-emerald-600" : "text-rose-600"
+                    }`}
+                  />
+                  <span className="font-medium text-ink-800">Right now</span>
+                  <span className="text-ink-400 text-xs ml-auto">
+                    {new Date().toLocaleTimeString("en-IN", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
               </div>
             )}
 
-            {/* QR code */}
             <div>
               <label className="text-xs font-medium text-ink-600 flex items-center gap-1.5 mb-2">
                 <QrCode className="w-3.5 h-3.5" />
@@ -232,7 +235,6 @@ export default function ActionModal({
             </div>
           </div>
 
-          {/* Info strip */}
           <div className="rounded-xl bg-ink-50 ring-1 ring-ink-100 p-4 text-xs space-y-1.5">
             <div className="flex justify-between">
               <span className="text-ink-500">Member ID</span>
@@ -253,14 +255,23 @@ export default function ActionModal({
                   isIn ? "text-emerald-600" : "text-rose-600"
                 }`}
               >
-                {isIn ? "CHECK IN NOW" : "AUTO CHECK OUT"}
+                {isScheduled
+                  ? isIn
+                    ? "AUTO CHECK IN"
+                    : "AUTO CHECK OUT"
+                  : isIn
+                  ? "CHECK IN NOW"
+                  : "CHECK OUT NOW"}
               </span>
             </div>
-            {!isIn && (
+            {isScheduled && (
               <div className="flex justify-between">
                 <span className="text-ink-500">Scheduled</span>
                 <span className="font-medium text-ink-800">
                   {scheduleAt.toLocaleString("en-IN")}
+                  {isPast && (
+                    <span className="text-ink-400 font-normal"> · now</span>
+                  )}
                 </span>
               </div>
             )}
@@ -291,9 +302,11 @@ export default function ActionModal({
             >
               {submitting
                 ? "Submitting…"
-                : isIn
-                ? "Confirm Check In"
-                : "Schedule Check Out"}
+                : isScheduled
+                ? isPast
+                  ? `Run ${isIn ? "Check In" : "Check Out"} Now`
+                  : `Schedule ${isIn ? "Check In" : "Check Out"}`
+                : `Confirm ${isIn ? "Check In" : "Check Out"}`}
             </button>
           </div>
         </div>

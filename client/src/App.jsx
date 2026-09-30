@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import MemberEntry from "./components/MemberEntry";
 import EventList from "./components/EventList";
@@ -7,12 +7,10 @@ import ActionModal from "./components/ActionModal";
 import JourneyView from "./components/JourneyView";
 import SourceTabs from "./components/SourceTabs";
 import ScheduledPanel from "./components/ScheduledPanel";
+import Settings from "./components/Settings";
 import Toast from "./components/Toast";
 import CountdownToast from "./components/CountdownToast";
 import Loader from "./components/Loader";
-import Settings from "./components/Settings";
-
-import useScheduler from "./hooks/useScheduler";
 
 import {
   fetchMyEvents,
@@ -21,21 +19,13 @@ import {
   scanActivity,
   joinEvent,
   warmup,
+  scheduleCheckout,
+  fetchScheduled,
+  cancelScheduled,
 } from "./api";
 
-import {
-  upsertJob,
-  newJobId,
-  findJobForEvent,
-} from "./utils/schedule";
-
-import {
-  isCheckedIn,
-  setCheckin,
-  clearCheckin,
-} from "./utils/checkinState";
-
 import { toApiTimeRaw } from "./utils/format";
+import { isCheckedIn, setCheckin, clearCheckin } from "./utils/checkinState";
 
 export default function App() {
   const [riderId, setRiderId] = useState(
@@ -62,49 +52,32 @@ export default function App() {
   const [journeyTotalPages, setJourneyTotalPages] = useState(1);
   const [journeyTotal, setJourneyTotal] = useState(0);
 
+  /* -------------------- Scheduled jobs (server-side) -------------------- */
+  const [scheduledJobs, setScheduledJobs] = useState([]);
+
   /* -------------------- View / UI -------------------- */
   const [view, setView] = useState("list"); // "list" | "detail"
   const [selected, setSelected] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [joining, setJoining] = useState(false);
   const [toast, setToast] = useState(null);
-  const [modal, setModal] = useState({ open: false, mode: "in" });
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // modal has: open, mode ("in"|"out"), scheduled (boolean)
+  const [modal, setModal] = useState({
+    open: false,
+    mode: "in",
+    scheduled: false,
+  });
+
   /* ------------------------------------------------------------------ */
-  /* Warm up the backend on mount (Render cold-start)                    */
+  /* Warm up backend                                                     */
   /* ------------------------------------------------------------------ */
   useEffect(() => {
     warmup();
   }, []);
-
-  /* ------------------------------------------------------------------ */
-  /* Background scheduler for auto check-out                             */
-  /* ------------------------------------------------------------------ */
-  useScheduler({
-    onFired: (job, res) => {
-      const ok = String(res?.response) === "true";
-      if (ok) clearCheckin(job.riderID, job.eventID);
-      setToast({
-        type: ok ? "success" : "error",
-        title: ok ? "Auto check-out complete" : "Auto check-out failed",
-        message:
-          res?.resultStatus ||
-          (ok
-            ? `Checked out from ${job.rideName}.`
-            : "Please try again manually."),
-      });
-    },
-    onError: (job, err) => {
-      setToast({
-        type: "error",
-        title: "Auto check-out error",
-        message: err?.message || "Network error.",
-      });
-    },
-  });
 
   /* ------------------------------------------------------------------ */
   /* Persist rider id                                                    */
@@ -114,7 +87,7 @@ export default function App() {
   }, [riderId]);
 
   /* ------------------------------------------------------------------ */
-  /* Initial load on mount (if riderId is already saved)                 */
+  /* Initial load                                                        */
   /* ------------------------------------------------------------------ */
   useEffect(() => {
     if (!riderId) return;
@@ -125,7 +98,7 @@ export default function App() {
   }, [riderId]);
 
   /* ------------------------------------------------------------------ */
-  /* Reload college list when its filters change                         */
+  /* Reload college list on filter change                                */
   /* ------------------------------------------------------------------ */
   useEffect(() => {
     if (riderId && source === "college") loadCollege();
@@ -133,12 +106,47 @@ export default function App() {
   }, [collegeStatus, collegePage, collegePageSize, collegeCategory]);
 
   /* ------------------------------------------------------------------ */
-  /* Reload journey when its pagination changes                          */
+  /* Reload journey on pagination change                                 */
   /* ------------------------------------------------------------------ */
   useEffect(() => {
     if (riderId && source === "journey") loadJourney();
     // eslint-disable-next-line
   }, [journeyPage, journeyPageSize]);
+
+  /* ------------------------------------------------------------------ */
+  /* Scheduled jobs — fetch + poll                                       */
+  /* ------------------------------------------------------------------ */
+  const refreshScheduled = useCallback(async () => {
+    if (!riderId) {
+      setScheduledJobs([]);
+      return;
+    }
+    try {
+      const res = await fetchScheduled(riderId);
+      setScheduledJobs(res?.data?.jobs || []);
+    } catch {
+      /* silent */
+    }
+  }, [riderId]);
+
+  useEffect(() => {
+    refreshScheduled();
+  }, [refreshScheduled]);
+
+  useEffect(() => {
+    if (!riderId) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") refreshScheduled();
+    }, 30_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") refreshScheduled();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [riderId, refreshScheduled]);
 
   /* ------------------------------------------------------------------ */
   /* Data loaders                                                        */
@@ -237,45 +245,13 @@ export default function App() {
     setView("list");
     setSelected(null);
 
-    if (source === "college") {
-      setLoading(true);
-      try {
-        const res = await fetchCollegeEvents(id, {
-          tab: "current",
-          page: 1,
-          pageSize: collegePageSize,
-        });
-        const d = res?.data || {};
-        setCollegeEvents(d.events || []);
-        setCollegeMeta({
-          student: d.student,
-          college: d.college,
-          master_event: d.master_event,
-          counts: d.counts,
-          all_categories: d.all_categories || [],
-          total: d.total_events,
-          total_pages: d.total_pages,
-          current_page: d.current_page,
-          page_size: d.page_size,
-        });
-      } catch (err) {
-        setToast({
-          type: "error",
-          title: "Couldn't load events",
-          message: err?.response?.data?.detail || err.message,
-        });
-      } finally {
-        setLoading(false);
-      }
-    } else if (source === "my") {
-      await loadMy();
-    } else {
-      await loadJourney();
-    }
+    if (source === "college") await loadCollege();
+    else if (source === "my") await loadMy();
+    else await loadJourney();
   };
 
   /* ------------------------------------------------------------------ */
-  /* Source / tab switch                                                 */
+  /* Source switch                                                       */
   /* ------------------------------------------------------------------ */
   const handleSourceChange = async (next) => {
     if (next === source) return;
@@ -298,6 +274,7 @@ export default function App() {
     setJourneySummary(null);
     setJourneyRecords([]);
     setJourneyPage(1);
+    setScheduledJobs([]);
     setView("list");
     setSelected(null);
     localStorage.removeItem("bypass_rider");
@@ -317,11 +294,22 @@ export default function App() {
   };
 
   /* ------------------------------------------------------------------ */
-  /* Check-in / Check-out actions                                        */
+  /* Open modal — opts.scheduled decides immediate vs scheduled          */
   /* ------------------------------------------------------------------ */
-  const handleAction = (mode) => setModal({ open: true, mode });
+  const handleAction = (mode, opts = {}) => {
+    setModal({
+      open: true,
+      mode,
+      scheduled: !!opts.scheduled,
+    });
+  };
 
-  // Immediate check-in (mode "in") — time is "now"
+  const closeModal = () =>
+    setModal({ open: false, mode: "in", scheduled: false });
+
+  /* ------------------------------------------------------------------ */
+  /* Immediate check-in OR check-out                                     */
+  /* ------------------------------------------------------------------ */
   const handleSubmitAction = async ({
     mode,
     eventID,
@@ -332,42 +320,26 @@ export default function App() {
     longitude,
     time,
   }) => {
-    /* ---------- Guard 1: already checked in ---------- */
+    /* ---- Guard 1: already checked in ---- */
     if (mode === "in" && isCheckedIn(riderID, eventID)) {
       setToast({
         type: "info",
         title: "Already checked in",
         message: "You have already checked in to this event.",
       });
-      setModal({ open: false, mode: "in" });
+      closeModal();
       return;
     }
 
-    /* ---------- Guard 2: not checked in but trying to check out ---------- */
+    /* ---- Guard 2: trying to check out without check-in ---- */
     if (mode === "out" && !isCheckedIn(riderID, eventID)) {
       setToast({
         type: "info",
         title: "Not checked in",
         message: "Please check in before checking out.",
       });
-      setModal({ open: false, mode: "in" });
+      closeModal();
       return;
-    }
-
-    /* ---------- Guard 3: a scheduled checkout already exists ---------- */
-    if (mode === "out") {
-      const existing = findJobForEvent(riderID, eventID);
-      if (existing) {
-        setToast({
-          type: "info",
-          title: "Checkout already scheduled",
-          message:
-            "You already have an auto check-out scheduled for this event. " +
-            "Schedule again to replace it.",
-        });
-        setModal({ open: false, mode: "in" });
-        return;
-      }
     }
 
     setSubmitting(true);
@@ -405,7 +377,7 @@ export default function App() {
           res?.resultStatus ||
           (ok ? "Saved successfully." : "Please try again."),
       });
-      if (ok) setModal({ open: false, mode: "in" });
+      if (ok) closeModal();
     } catch (err) {
       setToast({
         type: "error",
@@ -417,33 +389,72 @@ export default function App() {
     }
   };
 
-  // Scheduled check-out — persist a job (single per event), no network yet
-  const handleSchedule = (payload) => {
-    const existing = findJobForEvent(payload.riderID, payload.eventID);
+  /* ------------------------------------------------------------------ */
+  /* Scheduled check-in OR check-out (server owns the timer)             */
+  /* ------------------------------------------------------------------ */
+  const handleSchedule = async (payload) => {
+    setSubmitting(true);
+    try {
+      const isIn = payload.mode === "in";
 
-    const job = {
-      id: existing?.id || newJobId(),
-      ...payload,
-      status: "pending",
-      createdAt: Date.now(),
-    };
+      const existing = scheduledJobs.find(
+        (j) =>
+          String(j.eventID) === String(payload.eventID) &&
+          (j.mode || "out") === payload.mode &&
+          (j.status === "delayed" ||
+            j.status === "waiting" ||
+            j.status === "active")
+      );
 
-    // Replaces any pending/running job for this event.
-    upsertJob(job);
+      const res = await scheduleCheckout(payload);
+      if (res?.status !== "success") {
+        throw new Error(res?.message || "Failed to schedule");
+      }
 
-    setToast({
-      type: "countdown",
-      title: existing
-        ? "Auto check-out rescheduled"
-        : "Auto check-out scheduled",
-      message: existing
-        ? `Replaced the previous schedule for ${job.rideName}.`
-        : `We'll check you out from ${job.rideName}.`,
-      scheduledAt: job.scheduledAt,
-      autoCloseAfter: 8000,
-    });
+      await refreshScheduled();
 
-    setModal({ open: false, mode: "in" });
+      setToast({
+        type: "countdown",
+        title: existing
+          ? `Auto check-${isIn ? "in" : "out"} rescheduled`
+          : `Auto check-${isIn ? "in" : "out"} scheduled`,
+        message: existing
+          ? `Replaced the previous schedule for ${
+              payload.rideName || "this event"
+            }.`
+          : `We'll auto ${
+              isIn ? "check you in to" : "check you out from"
+            } ${payload.rideName || "this event"}.`,
+        scheduledAt: payload.scheduledAt,
+        autoCloseAfter: 8000,
+      });
+
+      closeModal();
+    } catch (err) {
+      setToast({
+        type: "error",
+        title: "Couldn't schedule",
+        message: err?.message || "Please try again.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Cancel a scheduled job                                              */
+  /* ------------------------------------------------------------------ */
+  const handleCancelScheduled = async (jobID) => {
+    try {
+      await cancelScheduled(jobID);
+      await refreshScheduled();
+    } catch (err) {
+      setToast({
+        type: "error",
+        title: "Couldn't cancel",
+        message: err?.message || "Please try again.",
+      });
+    }
   };
 
   /* ------------------------------------------------------------------ */
@@ -453,7 +464,6 @@ export default function App() {
     if (!selected) return;
     setJoining(true);
     try {
-      // 1) Dry-run to check current membership
       const check = await joinEvent({
         rider_id: riderId,
         eventID: selected.challengeID,
@@ -469,7 +479,6 @@ export default function App() {
         return;
       }
 
-      // 2) Real join
       const res = await joinEvent({
         rider_id: riderId,
         eventID: selected.challengeID,
@@ -491,11 +500,10 @@ export default function App() {
           (already
             ? "You're already a member of this event."
             : ok
-              ? "You've been added to the event."
-              : "Please try again."),
+            ? "You've been added to the event."
+            : "Please try again."),
       });
 
-      // 3) Refresh the All Events list so join state stays fresh
       if (ok && source === "college") {
         const fresh = await fetchCollegeEvents(riderId, {
           tab: collegeStatus,
@@ -525,8 +533,26 @@ export default function App() {
     ? isCheckedIn(riderId, selected.challengeID)
     : false;
 
-  const selectedHasSchedule = selected
-    ? !!findJobForEvent(riderId, selected.challengeID)
+  const selectedHasCheckinSchedule = selected
+    ? scheduledJobs.some(
+        (j) =>
+          String(j.eventID) === String(selected.challengeID) &&
+          (j.mode || "out") === "in" &&
+          (j.status === "delayed" ||
+            j.status === "waiting" ||
+            j.status === "active")
+      )
+    : false;
+
+  const selectedHasCheckoutSchedule = selected
+    ? scheduledJobs.some(
+        (j) =>
+          String(j.eventID) === String(selected.challengeID) &&
+          (j.mode || "out") === "out" &&
+          (j.status === "delayed" ||
+            j.status === "waiting" ||
+            j.status === "active")
+      )
     : false;
 
   /* ------------------------------------------------------------------ */
@@ -540,15 +566,18 @@ export default function App() {
         onSettings={() => setSettingsOpen(true)}
       />
 
-      {/* Shared source tabs (All Events / My Events / Journey) */}
       {riderId && (
         <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6">
           <SourceTabs value={source} onChange={handleSourceChange} />
         </div>
       )}
 
-      {/* Scheduled auto check-outs banner */}
-      {riderId && <ScheduledPanel />}
+      {riderId && (
+        <ScheduledPanel
+          jobs={scheduledJobs}
+          onCancel={handleCancelScheduled}
+        />
+      )}
 
       <main className="flex-1">
         {!riderId ? (
@@ -563,7 +592,8 @@ export default function App() {
             onJoin={handleJoin}
             joining={joining}
             checkedIn={selectedCheckedIn}
-            hasScheduledCheckout={selectedHasSchedule}
+            hasScheduledCheckin={selectedHasCheckinSchedule}
+            hasScheduledCheckout={selectedHasCheckoutSchedule}
             collegeMeta={source === "college" ? collegeMeta : null}
           />
         ) : source === "journey" ? (
@@ -621,26 +651,27 @@ export default function App() {
       <ActionModal
         open={modal.open}
         mode={modal.mode}
+        scheduled={modal.scheduled}
         event={selected || {}}
         riderId={riderId}
-        onClose={() => setModal({ open: false, mode: "in" })}
+        onClose={closeModal}
         onSubmit={handleSubmitAction}
         onSchedule={handleSchedule}
         submitting={submitting}
       />
 
-      {/* Toast — either the regular one or the countdown variant */}
-      {toast?.type === "countdown" ? (
-        <CountdownToast toast={toast} onClose={() => setToast(null)} />
-      ) : (
-        <Toast toast={toast} onClose={() => setToast(null)} />
-      )}
       <Settings
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         riderId={riderId}
         onToast={setToast}
       />
+
+      {toast?.type === "countdown" ? (
+        <CountdownToast toast={toast} onClose={() => setToast(null)} />
+      ) : (
+        <Toast toast={toast} onClose={() => setToast(null)} />
+      )}
     </div>
   );
 }

@@ -151,4 +151,32 @@ export const deletePost = async ({ rider_id, activityID, challengeID }) => {
 };
 
 
+/** Schedule (or replace) an auto checkout — server owns the timer. */
+export const scheduleCheckout = async (payload) => {
+  const { data } = await api.post("/schedule-checkout", payload, {
+    validateStatus: (s) => s < 500,
+  });
+  return data;
+};
+
+/** List all pending + recent jobs for a rider. */
+export const fetchScheduled = async (riderID) => {
+  const { data } = await api.get(`/scheduled/${riderID}`, {
+    validateStatus: (s) => s < 500,
+  });
+  return data;
+};
+
+/** Cancel a pending job. */
+export const cancelScheduled = async (jobID) => {
+  const { data } = await api.delete(
+    `/scheduled/${encodeURIComponent(jobID)}`,
+    { validateStatus: (s) => s < 500 }
+  );
+  return data;
+};
+
+
+
+
 export default api;

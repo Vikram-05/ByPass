@@ -1,59 +1,60 @@
-import { useEffect, useState } from "react";
-import { Timer, X, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
-import { loadJobs, removeJob } from "../utils/schedule";
+import { Timer, X, CheckCircle2, AlertCircle, Loader2, LogIn, LogOut } from "lucide-react";
 import useCountdown from "../hooks/useCountdown";
 
-function JobRow({ job, onCancel, variant = "pending" }) {
-  const remaining = useCountdown(job.status === "pending" ? job.scheduledAt : null);
-  const styles =
-    variant === "pending"
-      ? {
-          wrap: "bg-rose-50 ring-rose-100",
-          icon: job.status === "running"
-            ? <Loader2 className="w-4 h-4 text-rose-600 animate-spin" />
-            : <Timer className="w-4 h-4 text-rose-600" />,
-          title: "text-rose-900",
-          sub: "text-rose-700",
-        }
-      : job.status === "completed"
-      ? {
-          wrap: "bg-emerald-50 ring-emerald-100",
-          icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
-          title: "text-emerald-900",
-          sub: "text-ink-600",
-        }
-      : {
-          wrap: "bg-amber-50 ring-amber-100",
-          icon: <AlertCircle className="w-4 h-4 text-amber-600" />,
-          title: "text-amber-900",
-          sub: "text-ink-600",
-        };
+function JobRow({ job, onCancel }) {
+  const isPending =
+    job.status === "delayed" ||
+    job.status === "waiting" ||
+    job.status === "active";
 
-  const title =
-    variant === "pending"
-      ? "Auto check-out scheduled"
-      : job.status === "completed"
-      ? "Auto check-out completed"
-      : "Auto check-out failed";
+  const remaining = useCountdown(isPending ? job.scheduledAt : null);
+  const mode = job.mode || "out";
+  const isIn = mode === "in";
+
+  const style = isPending
+    ? isIn
+      ? { wrap: "bg-emerald-50 ring-emerald-100", title: "text-emerald-900", sub: "text-emerald-700" }
+      : { wrap: "bg-rose-50 ring-rose-100", title: "text-rose-900", sub: "text-rose-700" }
+    : job.status === "completed"
+    ? { wrap: "bg-emerald-50 ring-emerald-100", title: "text-emerald-900", sub: "text-ink-600" }
+    : { wrap: "bg-amber-50 ring-amber-100", title: "text-amber-900", sub: "text-ink-600" };
+
+  const title = isPending
+    ? isIn
+      ? "Auto check-in scheduled"
+      : "Auto check-out scheduled"
+    : job.status === "completed"
+    ? isIn
+      ? "Auto check-in completed"
+      : "Auto check-out completed"
+    : isIn
+    ? "Auto check-in failed"
+    : "Auto check-out failed";
 
   return (
-    <div
-      className={`flex items-center gap-3 ${styles.wrap} ring-1 rounded-xl px-4 py-2.5`}
-    >
-      {styles.icon}
+    <div className={`flex items-center gap-3 ${style.wrap} ring-1 rounded-xl px-4 py-2.5`}>
+      {job.status === "active" ? (
+        <Loader2 className={`w-4 h-4 animate-spin ${isIn ? "text-emerald-600" : "text-rose-600"}`} />
+      ) : job.status === "completed" ? (
+        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+      ) : job.status === "failed" ? (
+        <AlertCircle className="w-4 h-4 text-amber-600" />
+      ) : isIn ? (
+        <LogIn className="w-4 h-4 text-emerald-600" />
+      ) : (
+        <LogOut className="w-4 h-4 text-rose-600" />
+      )}
       <div className="min-w-0 flex-1">
-        <p className={`text-xs font-semibold truncate ${styles.title}`}>
-          {title}
-        </p>
-        <p className={`text-[11px] truncate ${styles.sub}`}>
+        <p className={`text-xs font-semibold truncate ${style.title}`}>{title}</p>
+        <p className={`text-[11px] truncate ${style.sub}`}>
           {job.rideName}
-          {variant === "pending" && (
+          {isPending && (
             <>
               {" · fires in "}
               <span className="tabular-nums font-medium">{remaining}</span>
             </>
           )}
-          {job.error ? ` · ${job.error}` : ""}
+          {job.failedReason ? ` · ${job.failedReason}` : ""}
         </p>
       </div>
       <button
@@ -67,35 +68,23 @@ function JobRow({ job, onCancel, variant = "pending" }) {
   );
 }
 
-export default function ScheduledPanel() {
-  const [jobs, setJobs] = useState(loadJobs());
-
-  useEffect(() => {
-    const reload = () => setJobs(loadJobs());
-    window.addEventListener("bypass:jobs-changed", reload);
-    window.addEventListener("storage", reload);
-    return () => {
-      window.removeEventListener("bypass:jobs-changed", reload);
-      window.removeEventListener("storage", reload);
-    };
-  }, []);
-
+export default function ScheduledPanel({ jobs = [], onCancel }) {
   const pending = jobs.filter(
-    (j) => j.status === "pending" || j.status === "running"
+    (j) => j.status === "delayed" || j.status === "waiting" || j.status === "active"
   );
   const recent = jobs
     .filter((j) => j.status === "completed" || j.status === "failed")
-    .slice(-2);
+    .slice(-3);
 
   if (pending.length === 0 && recent.length === 0) return null;
 
   return (
     <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 pt-4 space-y-2">
       {pending.map((j) => (
-        <JobRow key={j.id} job={j} onCancel={removeJob} />
+        <JobRow key={j.id} job={j} onCancel={onCancel} />
       ))}
       {recent.map((j) => (
-        <JobRow key={j.id} job={j} onCancel={removeJob} variant="recent" />
+        <JobRow key={j.id} job={j} onCancel={onCancel} />
       ))}
     </div>
   );

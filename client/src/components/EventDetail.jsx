@@ -12,21 +12,25 @@ import {
   GraduationCap,
   UserPlus,
   Loader2,
+  CalendarClock,
 } from "lucide-react";
 import { formatDateTime } from "../utils/format";
 
 export default function EventDetail({
   event,
   onBack,
-  onAction,
+  onAction,              // (mode, { scheduled }) → opens modal
   onJoin,
   joining,
+  checkedIn,
+  hasScheduledCheckin,
+  hasScheduledCheckout,
   collegeMeta,
 }) {
   const joined = event.Joined === "Yes";
   const finished = event.finished === "1";
   const isCollege = event.source === "college";
-  const isMyEvent = event.source === "cykul"; // ← gating flag
+  const isMyEvent = event.source === "cykul";
 
   const infoRows = [
     { label: "Event ID", value: event.challengeID, mono: true, icon: Hash },
@@ -70,7 +74,6 @@ export default function EventDetail({
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 animate-fade-up">
-      {/* Back */}
       <button
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-ink-900 mb-5 transition"
@@ -145,7 +148,6 @@ export default function EventDetail({
           </dl>
         </div>
 
-        {/* About */}
         {event.about && event.about !== "undefined" && (
           <div className="bg-white rounded-2xl ring-1 ring-ink-100 p-5 sm:col-span-2">
             <div className="flex items-start gap-3">
@@ -164,7 +166,6 @@ export default function EventDetail({
           </div>
         )}
 
-        {/* How check-in works — only show for My Events */}
         {isMyEvent && (
           <div className="bg-white rounded-2xl ring-1 ring-ink-100 p-5 sm:col-span-2">
             <div className="flex items-start gap-3">
@@ -173,12 +174,15 @@ export default function EventDetail({
               </div>
               <div>
                 <h3 className="text-sm font-semibold text-ink-900">
-                  How check-in works
+                  How it works
                 </h3>
                 <p className="text-xs text-ink-500 mt-1 leading-relaxed">
-                  Pick your location on the map, set the exact check-in/out
-                  time, and confirm. The QR code is pre-filled but you can
-                  edit it if needed.
+                  <strong>Check In</strong> / <strong>Check Out</strong> fire
+                  immediately at your current location.{" "}
+                  <strong>Schedule</strong> lets you pick <em>any</em> time —
+                  past, present, or future. If the time is in the past, it
+                  fires right away. ByPass runs it automatically — even if
+                  you close the browser.
                 </p>
               </div>
             </div>
@@ -186,7 +190,7 @@ export default function EventDetail({
         )}
       </div>
 
-      {/* College metadata card */}
+      {/* College meta */}
       {isCollege && collegeMeta && (
         <div className="bg-white rounded-2xl ring-1 ring-ink-100 p-5 mt-6 flex items-center gap-4">
           {collegeMeta.master_event?.rideLogo && (
@@ -213,14 +217,13 @@ export default function EventDetail({
         </div>
       )}
 
-      {/* Actions */}
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Join — only on college (All Events) with an invitation code */}
+      {/* ---------------- Actions ---------------- */}
+      <div className="mt-6 space-y-3">
         {isCollege && event.invitationCode && (
           <button
             onClick={onJoin}
             disabled={joining}
-            className="sm:col-span-2 flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-ink-900 text-white font-medium text-sm hover:bg-ink-800 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-sm"
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-ink-900 text-white font-medium text-sm hover:bg-ink-800 disabled:opacity-60 disabled:cursor-not-allowed transition shadow-sm"
           >
             {joining ? (
               <>
@@ -236,29 +239,53 @@ export default function EventDetail({
           </button>
         )}
 
-        {/* Check-in / Check-out — ONLY for My Events */}
         {isMyEvent && (
-          <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Immediate Check In */}
             <button
-              onClick={() => onAction("in")}
-              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-700 transition shadow-sm"
+              onClick={() => onAction("in", { scheduled: false })}
+              disabled={checkedIn}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
             >
               <LogIn className="w-4 h-4" />
-              Check In
+              {checkedIn ? "Already Checked In" : "Check In"}
             </button>
 
+            {/* Immediate Check Out */}
             <button
-              onClick={() => onAction("out")}
-              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-rose-600 text-white font-medium text-sm hover:bg-rose-700 transition shadow-sm"
+              onClick={() => onAction("out", { scheduled: false })}
+              disabled={!checkedIn}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-rose-600 text-white font-medium text-sm hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
             >
               <LogOut className="w-4 h-4" />
-              Schedule Check Out
+              Check Out
             </button>
-          </>
+
+            {/* Schedule Check In — always enabled unless already scheduled */}
+            <button
+              onClick={() => onAction("in", { scheduled: true })}
+              disabled={hasScheduledCheckin}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white text-emerald-700 ring-1 ring-emerald-200 font-medium text-sm hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              <CalendarClock className="w-4 h-4" />
+              {hasScheduledCheckin ? "Check-in Scheduled" : "Schedule Check In"}
+            </button>
+
+            {/* Schedule Check Out — always enabled unless already scheduled */}
+            <button
+              onClick={() => onAction("out", { scheduled: true })}
+              disabled={hasScheduledCheckout}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white text-rose-700 ring-1 ring-rose-200 font-medium text-sm hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              <CalendarClock className="w-4 h-4" />
+              {hasScheduledCheckout
+                ? "Check-out Scheduled"
+                : "Schedule Check Out"}
+            </button>
+          </div>
         )}
       </div>
 
-      {/* Footer hint — contextual */}
       {isMyEvent ? (
         <p className="text-[11px] text-ink-400 text-center mt-4 flex items-center justify-center gap-1">
           <MapPin className="w-3 h-3" />
@@ -267,7 +294,7 @@ export default function EventDetail({
       ) : (
         <p className="text-[11px] text-ink-400 text-center mt-4 flex items-center justify-center gap-1">
           <MapPin className="w-3 h-3" />
-          Join this event from the All Events tab to enable check-in / check-out.
+          Join this event to enable check-in / check-out.
         </p>
       )}
     </div>

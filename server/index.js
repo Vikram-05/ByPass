@@ -1,9 +1,14 @@
 import express from "express";
 import cors from "cors";
 import axios from "axios";
-import dotenv from "dotenv";
+import "dotenv/config";
+import {
+  scheduleCheckout,
+  listJobs,
+  cancelJob,
+} from "./queue.js";
 
-dotenv.config();
+// dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -18,7 +23,7 @@ const CYKUL_SCAN_URL =
   "https://cykul.in/app/lifeCykul/webservice/scanning/scanActivities.php";
 const COLLEGE_EVENTS_URL =
   "https://vtuapts.zdotapps.in/api/student/api/college-events/";
-  // ---- Upstream API -------------------------------------------------------
+// ---- Upstream API -------------------------------------------------------
 const JOIN_EVENT_URL =
   "https://vtuapts.zdotapps.in/api/student/joinevent/";
 
@@ -364,8 +369,8 @@ app.post("/api/my-posts", async (req, res) => {
     const rawList = Array.isArray(data?.resultStatus)
       ? data.resultStatus
       : Array.isArray(data?.data?.resultStatus)
-      ? data.data.resultStatus
-      : [];
+        ? data.data.resultStatus
+        : [];
 
     // Strip the "welcome" placeholder + anything without a real activityID
     const posts = rawList.filter(
@@ -537,8 +542,8 @@ app.post("/api/scan", async (req, res) => {
 
   // ---- Normalize time to "YYYY-Mon-DD HH:MM" ----
   const months = [
-    "Jan","Feb","Mar","Apr","May","Jun",
-    "Jul","Aug","Sep","Oct","Nov","Dec",
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   ];
   const pad = (n) => String(n).padStart(2, "0");
   let timeStr = time;
@@ -606,10 +611,93 @@ app.post("/api/scan", async (req, res) => {
   }
 });
 
+/* ---------------------------------------------------------------------------
+ * Scheduled checkouts (server-side, survives browser close)
+ * ------------------------------------------------------------------------- */
+
+app.post("/api/schedule-checkout", async (req, res) => {
+  const {
+    mode = "out",
+    riderID,
+    eventID,
+    rideName,
+    address,
+    qrCode,
+    latitude,
+    longitude,
+    scheduledAt,
+  } = req.body || {};
+
+  if (!riderID || !eventID || scheduledAt == null) {
+    return res.status(400).json({
+      status: "error",
+      message: "riderID, eventID, and scheduledAt are required",
+    });
+  }
+
+  try {
+    const job = await scheduleCheckout({
+      mode: mode === "in" ? "in" : "out",
+      riderID: String(riderID),
+      eventID: String(eventID),
+      rideName: rideName || "",
+      address: address || "",
+      qrCode: qrCode || "",
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
+      scheduledAt: Number(scheduledAt), // any timestamp — past is fine
+      createdAt: Date.now(),
+    });
+    res.json({ status: "success", data: { job } });
+  } catch (err) {
+    console.error("[schedule-checkout]", err.message);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to schedule checkout",
+      detail: err.message,
+    });
+  }
+});
+app.get("/api/scheduled/:riderID", async (req, res) => {
+  try {
+    const jobs = await listJobs(String(req.params.riderID));
+    res.json({ status: "success", data: { jobs } });
+  } catch (err) {
+    console.error("[list-jobs]", err.message);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to list jobs",
+      detail: err.message,
+    });
+  }
+});
+
+app.delete("/api/scheduled/:jobID", async (req, res) => {
+  try {
+    const ok = await cancelJob(req.params.jobID);
+    res.json({ status: ok ? "success" : "not_found" });
+  } catch (err) {
+    console.error("[cancel-job]", err.message);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to cancel job",
+      detail: err.message,
+    });
+  }
+});
+
 app.get("/", (_, res) => res.send("ByPass API is running 🚀"));
 
-app.listen(PORT, () =>
+app.listen(PORT, () => {
+  if (!process.env.REDIS_URL) {
+    console.warn(
+      "[startup] REDIS_URL missing — scheduled checkouts will not fire."
+    );
+  } else {
+    console.log("[startup] Redis configured — auto-checkout worker online.");
+  }
   console.log(`ByPass server running on http://localhost:${PORT}`)
+}
 );
 
 
