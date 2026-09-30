@@ -25,18 +25,18 @@ export default function Navbar({ riderId, onLogout, onSettings }) {
 
             <button
               onClick={onSettings}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg text-ink-600 hover:text-ink-900 hover:bg-ink-50 transition"
+              className="flex items-center gap-1.5 text-s font-medium px-3 py-2 rounded-lg text-ink-600 hover:text-ink-900 hover:bg-ink-50 transition"
               title="Settings"
             >
-              <SettingsIcon className="w-3.5 h-3.5" />
+              <SettingsIcon className="w-[20px] h-[20px]" />
               <span className="hidden sm:inline">Settings</span>
             </button>
 
             <button
               onClick={onLogout}
-              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg text-ink-600 hover:text-ink-900 hover:bg-ink-50 transition"
+              className="flex items-center gap-1.5 text-s font-medium px-3 py-2 rounded-lg text-ink-600 hover:text-ink-900 hover:bg-ink-50 transition"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-[20px] h-[20px]" />
               <span className="hidden sm:inline">Logout</span>
             </button>
           </div>
