@@ -265,25 +265,46 @@ app.post("/api/my-events", async (req, res) => {
 });
 
 /** New: VTU-APTS college events */
+/** New: VTU-APTS college events — POST (matches current upstream contract) */
 app.get("/api/college-events/:riderId", async (req, res) => {
   const { riderId } = req.params;
-  const { tab = "current", page = 1, page_size = 5, category } = req.query;
+  const {
+    tab = "current",
+    page = 1,
+    page_size = 5,
+    search = "",
+    category = "",
+  } = req.query;
 
   try {
-    const { data } = await axios.get(COLLEGE_EVENTS_URL, {
-      params: {
-        riderID: riderId,
+    const { data } = await axios.post(
+      COLLEGE_EVENTS_URL,
+      {
+        riderID: String(riderId),
         tab,
-        page,
-        page_size,
+        page: Number(page),
+        page_size: Number(page_size),
+        search: search || "",
+        category: category || "",
       },
-      timeout: 15000,
-    });
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/plain, */*",
+          "User-Agent":
+            "Dalvik/2.1.0 (Linux; U; Android 16; RMX5030 Build/BP2A.250605.015)",
+        },
+        timeout: 20000,
+        validateStatus: () => true,
+      }
+    );
 
+    // Upstream may nest events differently — normalize.
     const eventsRaw = asArray(data?.data?.events);
     let events = eventsRaw.map(normalizeCollegeEvent);
 
-    // Optional client-side category filter
+    // Optional client-side category filter (server already filters, this
+    // is a belt-and-braces layer if the upstream ignores it).
     if (category) {
       const c = category.toLowerCase();
       events = events.filter(
