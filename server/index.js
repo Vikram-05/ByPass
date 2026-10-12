@@ -22,12 +22,12 @@ const CYKUL_EVENTS_URL =
 const CYKUL_SCAN_URL =
   "https://cykul.in/app/lifeCykul/webservice/scanning/scanActivities.php";
 const COLLEGE_EVENTS_URL =
-  "https://vtuapts.zdotapps.in/api/student/api/collegestudenteventsAPI/";
+  "https://vtuapts.zdotapps.in/api/student/api/collegeviewstudenteventsAPI/";
 // ---- Upstream API -------------------------------------------------------
 const JOIN_EVENT_URL =
-  "https://vtuapts.zdotapps.in/api/student/joinevent/";
+  "https://vtuapts.zdotapps.in/api/student/joinstudentvieweventAPI/";
 
-const JOURNEY_URL = "https://vtuapts.zdotapps.in/api/student/api/journeyuserlistAPI/";
+const JOURNEY_URL = "https://vtuapts.zdotapps.in/api/student/api/journeyuserviewlistAPI/";
 
 
 // ---- Upstream APIs -------------------------------------------------------
