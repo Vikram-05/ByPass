@@ -28,6 +28,41 @@ import { toApiTimeRaw } from "./utils/format";
 import { isCheckedIn, setCheckin, clearCheckin } from "./utils/checkinState";
 
 export default function App() {
+
+  useEffect(() => {
+    // Disable right-click
+    const disableRightClick = (e) => {
+      e.preventDefault();
+    };
+
+    // Block common DevTools shortcuts
+    const disableShortcuts = (e) => {
+      if (
+        e.key === "F12" ||
+        (e.ctrlKey &&
+          e.shiftKey &&
+          ["I", "J", "C"].includes(e.key.toUpperCase())) ||
+        (e.ctrlKey && e.key.toUpperCase() === "U")
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener("contextmenu", disableRightClick);
+    document.addEventListener("keydown", disableShortcuts);
+
+    return () => {
+      document.removeEventListener("contextmenu", disableRightClick);
+      document.removeEventListener("keydown", disableShortcuts);
+    };
+  }, []);
+
+
+
+
+
+
+
   const [riderId, setRiderId] = useState(
     () => localStorage.getItem("bypass_rider") || ""
   );

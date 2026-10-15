@@ -16,12 +16,12 @@ export default function Navbar({ riderId, onLogout, onSettings }) {
 
         {riderId && (
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink-50 border border-ink-100">
+            {/* <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-ink-50 border border-ink-100">
               <User className="w-3.5 h-3.5 text-ink-500" />
               <span className="text-xs font-medium text-ink-700">
                 #{riderId}
               </span>
-            </div>
+            </div> */}
 
             <button
               onClick={onSettings}
