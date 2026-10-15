@@ -28,7 +28,7 @@ export default function CollegeHeader({ college, masterEvent, student }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* <div className="flex items-center gap-2 flex-wrap">
         {student?.usn && (
           <span className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1.5 rounded-lg bg-ink-50 ring-1 ring-ink-100 text-ink-700">
             <Hash className="w-3 h-3" />
@@ -41,7 +41,7 @@ export default function CollegeHeader({ college, masterEvent, student }) {
             {student.rider_id}
           </span>
         )}
-      </div>
+      </div> */}
     </div>
   );
 }
